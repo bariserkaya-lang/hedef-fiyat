@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Yeni Tahmin Ekle</title>
+    <style>
+        body { font-family: Arial; margin: 40px; }
+        input, select { width: 300px; padding: 8px; margin: 5px 0; }
+        button { padding: 10px 20px; background: #27ae60; color: white; border: none; cursor: pointer; }
+        .error { background: #e74c3c; color: white; padding: 10px; border-radius: 5px; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <a href="/">← Ana Sayfa</a>
+    <h2>Yeni Tahmin Ekle</h2>
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    <form method="POST">
+        <div><label>Tarih:</label><br><input type="date" name="tarih" value="{{ datetime.now().strftime('%Y-%m-%d') }}" required></div>
+        <div><label>Hisse Kodu:</label><br><input type="text" name="hisse" placeholder="Örn: THYAO" required></div>
+        <div><label>Aracı Kurum:</label><br><input type="text" name="kurum" placeholder="Örn: İş Yatırım" required></div>
+        <div><label>Eski Hedef Fiyat:</label><br><input type="number" step="0.01" name="eski_fiyat" value="0" required></div>
+        <div><label>Yeni Hedef Fiyat:</label><br><input type="number" step="0.01" name="yeni_fiyat" required></div>
+        <div><label>Kapanış Fiyatı:</label><br><input type="number" step="0.01" name="kapanis" required></div>
+        <div><label>Tavsiye:</label><br>
+            <select name="tavsiye">
+                <option>AL</option><option>TUT</option><option>SAT</option>
+                <option>NÖTR</option><option>ENDEX ÜSTÜ</option>
+                <option>ENDEKSE PARALEL</option><option>ENDEX ALTI</option>
+            </select>
+        </div>
+        <br><button type="submit">✅ KAYDET</button>
+    </form>
+</body>
+</html>

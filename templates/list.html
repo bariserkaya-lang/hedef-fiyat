@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Tahmin Listesi</title>
+    <style>
+        body { font-family: Arial; margin: 40px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background: #3498db; color: white; }
+        .delete { color: red; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <a href="/">← Ana Sayfa</a>
+    <h2>Tahmin Listesi (son 100)</h2>
+    <table>
+        <thead><tr><th>ID</th><th>Tarih</th><th>Hisse</th><th>Kurum</th><th>Yeni Fiyat</th><th>Kapanış</th><th>Tavsiye</th><th>İşlem</th></tr></thead>
+        <tbody>
+            {% for row in predictions %}
+            <tr>
+                <td>{{ row[0] }}</td>
+                <td>{{ row[1] }}</td>
+                <td>{{ row[2] }}</td>
+                <td>{{ row[3] }}</td>
+                <td>{{ row[4] }}</td>
+                <td>{{ row[5] }}</td>
+                <td>{{ row[6] }}</td>
+                <td><a href="/delete/{{ row[0] }}" class="delete" onclick="return confirm('Sil?')">🗑️ Sil</a></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>
