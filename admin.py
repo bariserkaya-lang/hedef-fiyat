@@ -136,34 +136,23 @@ def add_adjustment():
             oran = float(request.form['oran'])
             aciklama = request.form.get('aciklama', '')
             
-            print(f"!!!!! DÜZELTME EKLENİYOR: {hisse_kodu}, {bolunme_tarihi}, {oran}")
-            
             conn = get_db()
             c = conn.cursor()
             
-            c.execute("""
-                INSERT INTO bolunme_duzeltmeleri (hisse_kodu, bolunme_tarihi, oran, aciklama)
-                VALUES (?, ?, ?, ?)
-            """, (hisse_kodu, bolunme_tarihi, oran, aciklama))
+            c.execute("INSERT INTO bolunme_duzeltmeleri (hisse_kodu, bolunme_tarihi, oran, aciklama) VALUES (?, ?, ?, ?)",
+                      (hisse_kodu, bolunme_tarihi, oran, aciklama))
             conn.commit()
             
-            c.execute("""
-                UPDATE tahminler 
-                SET eski_hedef_fiyat = eski_hedef_fiyat / ?,
-                    yeni_hedef_fiyat = yeni_hedef_fiyat / ?
-                WHERE hisse_kodu = ? AND tarih < ?
-            """, (oran, oran, hisse_kodu, bolunme_tarihi))
+            c.execute("UPDATE tahminler SET eski_hedef_fiyat = eski_hedef_fiyat / ?, yeni_hedef_fiyat = yeni_hedef_fiyat / ? WHERE hisse_kodu = ? AND tarih < ?",
+                      (oran, oran, hisse_kodu, bolunme_tarihi))
             
             updated = c.rowcount
-            print(f"!!!!! {updated} SATIR GÜNCELLENDİ")
-            
             conn.commit()
             github_upload()
             conn.close()
             
             return redirect(url_for('adjustments'))
         except Exception as e:
-            print(f"!!!!! HATA: {e}")
             return render_template('add_adjustment.html', error=str(e))
     
     return render_template('add_adjustment.html', error=None)
@@ -178,12 +167,8 @@ def delete_adjustment(adj_id):
     
     if adj:
         hisse_kodu, bolunme_tarihi, oran = adj
-        c.execute("""
-            UPDATE tahminler 
-            SET eski_hedef_fiyat = eski_hedef_fiyat * ?,
-                yeni_hedef_fiyat = yeni_hedef_fiyat * ?
-            WHERE hisse_kodu = ? AND tarih < ?
-        """, (oran, oran, hisse_kodu, bolunme_tarihi))
+        c.execute("UPDATE tahminler SET eski_hedef_fiyat = eski_hedef_fiyat * ?, yeni_hedef_fiyat = yeni_hedef_fiyat * ? WHERE hisse_kodu = ? AND tarih < ?",
+                  (oran, oran, hisse_kodu, bolunme_tarihi))
         c.execute("DELETE FROM bolunme_duzeltmeleri WHERE id = ?", (adj_id,))
         conn.commit()
         github_upload()
@@ -200,12 +185,7 @@ def kapanis_duzenle():
         conn = get_db()
         c = conn.cursor()
         
-        c.execute("""
-            SELECT tarih, tarihsel_kapanis 
-            FROM tahminler 
-            WHERE hisse_kodu = ? 
-            ORDER BY tarih ASC
-        """, (hisse,))
+        c.execute("SELECT tarih, tarihsel_kapanis FROM tahminler WHERE hisse_kodu = ? ORDER BY tarih ASC", (hisse,))
         mevcut_fiyatlar = {tarih: fiyat for tarih, fiyat in c.fetchall()}
         
         yeni_referans = None
@@ -224,37 +204,14 @@ def kapanis_duzenle():
             eski_referans = mevcut_fiyatlar[referans_tarih]
             if eski_referans > 0:
                 oran = yeni_referans / eski_referans
-                
                 for tarih, eski_fiyat in mevcut_fiyatlar.items():
-                    yeni_fiyat = eski_fiyat * oran
-                    c.execute("""
-                        UPDATE tahminler 
-                        SET tarihsel_kapanis = ? 
-                        WHERE hisse_kodu = ? AND tarih = ?
-                    """, (round(yeni_fiyat, 4), hisse, tarih))
-                
+                    c.execute("UPDATE tahminler SET tarihsel_kapanis = ? WHERE hisse_kodu = ? AND tarih = ?",
+                              (round(eski_fiyat * oran, 4), hisse, tarih))
                 conn.commit()
                 github_upload()
-                mesaj = f"✅ {hisse} için {len(mevcut_fiyatlar)} satır kapanış fiyatı, {referans_tarih} tarihindeki {yeni_referans} TL referansına göre orantısal olarak düzeltildi."
-            else:
-                mesaj = "❌ Referans fiyat 0 olamaz!"
-        else:
-            mesaj = "❌ Lütfen bir tarih için doğru fiyat girin!"
         
         conn.close()
-        
-        conn = get_db()
-        c = conn.cursor()
-        c.execute("""
-            SELECT tarih, tarihsel_kapanis 
-            FROM tahminler 
-            WHERE hisse_kodu = ? 
-            ORDER BY tarih ASC
-        """, (hisse,))
-        rows = c.fetchall()
-        conn.close()
-        
-        return render_template('kapanis_duzenle.html', hisse=hisse, kapanislar=rows, mesaj=mesaj)
+        return redirect(url_for('kapanis_duzenle', hisse=hisse))
     
     else:
         hisse = request.args.get('hisse', '').upper()
@@ -263,12 +220,7 @@ def kapanis_duzenle():
         
         conn = get_db()
         c = conn.cursor()
-        c.execute("""
-            SELECT tarih, tarihsel_kapanis 
-            FROM tahminler 
-            WHERE hisse_kodu = ? 
-            ORDER BY tarih ASC
-        """, (hisse,))
+        c.execute("SELECT tarih, tarihsel_kapanis FROM tahminler WHERE hisse_kodu = ? ORDER BY tarih ASC", (hisse,))
         rows = c.fetchall()
         conn.close()
         
