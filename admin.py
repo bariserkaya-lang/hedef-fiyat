@@ -2,12 +2,38 @@ from flask import Flask, render_template, request, redirect, url_for, jsonify
 import sqlite3
 from datetime import datetime
 import os
+import base64
+import requests
 
 app = Flask(__name__)
 DB_PATH = os.path.join(os.path.dirname(__file__), "borsa_verisi.db")
 
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
+GITHUB_REPO = "bariserkaya-lang/hedef-fiyat"
+GITHUB_PATH = "borsa_verisi.db"
+
 def get_db():
     return sqlite3.connect(DB_PATH)
+
+def github_upload():
+    if not GITHUB_TOKEN:
+        print("GitHub token yok")
+        return False
+    try:
+        with open(DB_PATH, "rb") as f:
+            content = base64.b64encode(f.read()).decode()
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_PATH}"
+        headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
+        r = requests.get(url, headers=headers)
+        sha = r.json().get("sha", "") if r.status_code == 200 else ""
+        data = {"message": f"Yedek {datetime.now()}", "content": content, "branch": "main"}
+        if sha:
+            data["sha"] = sha
+        r2 = requests.put(url, headers=headers, json=data)
+        return r2.status_code in [200, 201]
+    except Exception as e:
+        print(f"Yedekleme hatası: {e}")
+        return False
 
 @app.route('/')
 def index():
@@ -122,6 +148,7 @@ def add_adjustment():
             conn.commit()
             
             apply_adjustment(hisse_kodu, bolunme_tarihi, oran)
+            github_upload()
             
             conn.close()
             return redirect(url_for('adjustments'))
@@ -143,6 +170,7 @@ def delete_adjustment(adj_id):
         revert_adjustment(hisse_kodu, bolunme_tarihi, oran)
         c.execute("DELETE FROM bolunme_duzeltmeleri WHERE id = ?", (adj_id,))
         conn.commit()
+        github_upload()
     
     conn.close()
     return redirect(url_for('adjustments'))
