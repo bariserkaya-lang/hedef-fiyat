@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Kapanış Fiyatı Düzenle</title>
+    <style>
+        body { font-family: Arial; margin: 40px; }
+        input, select { width: 300px; padding: 8px; margin: 5px 0; }
+        button { padding: 10px 20px; background: #27ae60; color: white; border: none; cursor: pointer; }
+        table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background: #3498db; color: white; }
+        .menu a { display: inline-block; margin-right: 20px; padding: 10px 20px; background: #3498db; color: white; text-decoration: none; border-radius: 5px; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="menu">
+        <a href="/">Ana Sayfa</a>
+        <a href="/list">Tahmin Listesi</a>
+        <a href="/add">Yeni Tahmin</a>
+        <a href="/adjustments">Düzeltmeler</a>
+        <a href="/kapanis_duzenle">Kapanış Düzenle</a>
+    </div>
+    
+    <h2>Hisse Seç ve Kapanış Fiyatlarını Düzenle</h2>
+    
+    <form method="GET" action="/kapanis_duzenle">
+        <label>Hisse Kodu:</label>
+        <input type="text" name="hisse" placeholder="Örn: KONTR" required>
+        <button type="submit">Listele</button>
+    </form>
+    
+    {% if hisse %}
+    <h3>{{ hisse }} için Kapanış Fiyatları</h3>
+    <form method="POST" action="/kapanis_duzenle">
+        <input type="hidden" name="hisse" value="{{ hisse }}">
+        <table>
+            <thead>
+                <tr><th>Tarih</th><th>Mevcut Kapanış</th><th>Yeni Kapanış</th></tr>
+            </thead>
+            <tbody>
+                {% for row in kapanislar %}
+                <tr>
+                    <td>{{ row[0] }}</td>
+                    <td>{{ row[1] }}</td>
+                    <td><input type="text" name="kapanis_{{ row[0] }}" value="{{ row[1] }}" step="0.01"></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <button type="submit">💾 KAYDET</button>
+    </form>
+    {% endif %}
+</body>
+</html>
