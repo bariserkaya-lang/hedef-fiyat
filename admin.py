@@ -5,10 +5,7 @@ import os
 import base64
 import requests
 
-# --- ÖNCE Flask uygulamasını oluştur ---
 app = Flask(__name__)
-# ------------------------------------
-
 DB_PATH = os.path.join(os.path.dirname(__file__), "borsa_verisi.db")
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 GITHUB_REPO = "bariserkaya-lang/hedef-fiyat"
@@ -149,10 +146,22 @@ def add_adjustment():
             
             conn.commit()
             
-            apply_adjustment(hisse_kodu, bolunme_tarihi, oran)
+            # Düzeltmeyi UYGULA
+            c.execute("""
+                UPDATE tahminler 
+                SET eski_hedef_fiyat = eski_hedef_fiyat / ?,
+                    yeni_hedef_fiyat = yeni_hedef_fiyat / ?
+                WHERE hisse_kodu = ? AND tarih < ?
+            """, (oran, oran, hisse_kodu, bolunme_tarihi))
+            
+            updated = c.rowcount
+            conn.commit()
+            
+            # GitHub'a yedekle
             github_upload()
             
             conn.close()
+            
             return redirect(url_for('adjustments'))
         except Exception as e:
             return render_template('add_adjustment.html', error=str(e))
@@ -169,7 +178,13 @@ def delete_adjustment(adj_id):
     
     if adj:
         hisse_kodu, bolunme_tarihi, oran = adj
-        revert_adjustment(hisse_kodu, bolunme_tarihi, oran)
+        # Düzeltmeyi GERİ AL
+        c.execute("""
+            UPDATE tahminler 
+            SET eski_hedef_fiyat = eski_hedef_fiyat * ?,
+                yeni_hedef_fiyat = yeni_hedef_fiyat * ?
+            WHERE hisse_kodu = ? AND tarih < ?
+        """, (oran, oran, hisse_kodu, bolunme_tarihi))
         c.execute("DELETE FROM bolunme_duzeltmeleri WHERE id = ?", (adj_id,))
         conn.commit()
         github_upload()
@@ -177,35 +192,7 @@ def delete_adjustment(adj_id):
     conn.close()
     return redirect(url_for('adjustments'))
 
-def apply_adjustment(hisse_kodu, bolunme_tarihi, oran):
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("""
-        UPDATE tahminler 
-        SET eski_hedef_fiyat = eski_hedef_fiyat / ?,
-            yeni_hedef_fiyat = yeni_hedef_fiyat / ?
-        WHERE hisse_kodu = ? AND tarih < ?
-    """, (oran, oran, hisse_kodu, bolunme_tarihi))
-    updated = c.rowcount
-    conn.commit()
-    conn.close()
-    print(f"✅ {hisse_kodu} için {updated} satır düzeltildi")
-
-def revert_adjustment(hisse_kodu, bolunme_tarihi, oran):
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("""
-        UPDATE tahminler 
-        SET eski_hedef_fiyat = eski_hedef_fiyat * ?,
-            yeni_hedef_fiyat = yeni_hedef_fiyat * ?
-        WHERE hisse_kodu = ? AND tarih < ?
-    """, (oran, oran, hisse_kodu, bolunme_tarihi))
-    updated = c.rowcount
-    conn.commit()
-    conn.close()
-    print(f"🔄 {hisse_kodu} için {updated} satır geri alındı")
-
-# ======================== KAPANIŞ FİYATI DÜZENLEME (ORANTISAL) ========================
+# ======================== KAPANIŞ FİYATI DÜZENLEME ========================
 
 @app.route('/kapanis_duzenle', methods=['GET', 'POST'])
 def kapanis_duzenle():
@@ -248,7 +235,7 @@ def kapanis_duzenle():
                         UPDATE tahminler 
                         SET tarihsel_kapanis = ? 
                         WHERE hisse_kodu = ? AND tarih = ?
-                    """, (yeni_fiyat, hisse, tarih))
+                    """, (round(yeni_fiyat, 4), hisse, tarih))
                 
                 conn.commit()
                 github_upload()
@@ -274,7 +261,7 @@ def kapanis_duzenle():
         
         return render_template('kapanis_duzenle.html', hisse=hisse, kapanislar=rows, mesaj=mesaj)
     
-    else: # GET isteği
+    else:
         hisse = request.args.get('hisse', '').upper()
         if not hisse:
             return render_template('kapanis_duzenle.html', hisse=None, kapanislar=None)
