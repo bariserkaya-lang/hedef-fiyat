@@ -229,7 +229,6 @@ def fix_kontr():
     
     c.execute("UPDATE tahminler SET eski_hedef_fiyat = eski_hedef_fiyat / 3.25, yeni_hedef_fiyat = yeni_hedef_fiyat / 3.25 WHERE hisse_kodu = 'KONTR' AND tarih < '2024-07-19'")
     count1 = c.rowcount
-    
     c.execute("UPDATE tahminler SET eski_hedef_fiyat = eski_hedef_fiyat / 2.0, yeni_hedef_fiyat = yeni_hedef_fiyat / 2.0 WHERE hisse_kodu = 'KONTR' AND tarih < '2025-12-09'")
     count2 = c.rowcount
     
