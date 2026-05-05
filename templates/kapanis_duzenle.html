@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Kapanış Fiyatı Düzenle</title>
+    <title>Kapanış Fiyatı Düzenle (Orantısal)</title>
     <style>
         body { font-family: Arial; margin: 40px; }
         input, select { width: 300px; padding: 8px; margin: 5px 0; }
@@ -10,6 +10,8 @@
         th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
         th { background: #3498db; color: white; }
         .menu a { display: inline-block; margin-right: 20px; padding: 10px 20px; background: #3498db; color: white; text-decoration: none; border-radius: 5px; margin-bottom: 20px; }
+        .info { background: #e8f4f8; padding: 15px; border-radius: 5px; margin-bottom: 20px; border-left: 5px solid #3498db; }
+        .success { background: #d4edda; padding: 10px; border-radius: 5px; margin-bottom: 20px; color: #155724; }
     </style>
 </head>
 <body>
@@ -21,33 +23,48 @@
         <a href="/kapanis_duzenle">Kapanış Düzenle</a>
     </div>
     
-    <h2>Hisse Seç ve Kapanış Fiyatlarını Düzenle</h2>
+    <h2>Kapanış Fiyatlarını Orantısal Olarak Düzelt</h2>
+    
+    <div class="info">
+        <strong>📌 Nasıl çalışır?</strong><br>
+        1. Hisse kodunu gir ve "Mevcut Fiyatları Gör" butonuna tıkla.<br>
+        2. Tabloda, <strong>BİR TARİHİN</strong> fiyatını bildiğin doğru değerle değiştir.<br>
+        3. "Seçilen Tarihe Göre Orantısal Düzelt" butonuna tıkla.<br>
+        4. Sistem, o hissenin TÜM kapanış fiyatlarını, girdiğin doğru fiyata göre orantısal olarak yeniden hesaplar.<br>
+        <strong>Örnek:</strong> 12.5942 olan fiyatı 12.62 olarak değiştirirsen, diğer tüm fiyatlar aynı oranda düzeltilir.
+    </div>
     
     <form method="GET" action="/kapanis_duzenle">
         <label>Hisse Kodu:</label>
         <input type="text" name="hisse" placeholder="Örn: KONTR" required>
-        <button type="submit">Listele</button>
+        <button type="submit">Mevcut Fiyatları Gör</button>
     </form>
     
     {% if hisse %}
-    <h3>{{ hisse }} için Kapanış Fiyatları</h3>
+    <h3>{{ hisse }} için Mevcut Kapanış Fiyatları</h3>
+    
+    {% if mesaj %}
+    <div class="success">{{ mesaj }}</div>
+    {% endif %}
+    
     <form method="POST" action="/kapanis_duzenle">
         <input type="hidden" name="hisse" value="{{ hisse }}">
-        <table>
+        <input type="hidden" name="orantili" value="1">
+        <tr>
             <thead>
-                <tr><th>Tarih</th><th>Mevcut Kapanış</th><th>Yeni Kapanış</th></tr>
+                <tr><th>📅 Tarih</th><th>💰 Mevcut Kapanış</th><th>✏️ Doğru Fiyat (SADECE BİR TARİH İÇİN GİR)</th></tr>
             </thead>
             <tbody>
                 {% for row in kapanislar %}
                 <tr>
                     <td>{{ row[0] }}</td>
                     <td>{{ row[1] }}</td>
-                    <td><input type="text" name="kapanis_{{ row[0] }}" value="{{ row[1] }}" step="0.01"></td>
+                    <td><input type="text" name="kapanis_{{ row[0] }}" value="" step="0.01" style="width:120px" placeholder="Sadece birini doldur"></td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
-        <button type="submit">💾 KAYDET</button>
+        <button type="submit" style="background: #e67e22;">🔄 Seçilen Tarihe Göre Orantısal Düzelt</button>
     </form>
     {% endif %}
 </body>
