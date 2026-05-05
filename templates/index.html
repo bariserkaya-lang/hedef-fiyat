@@ -7,7 +7,7 @@
         .stats { background: #f0f0f0; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
         .stat { display: inline-block; margin-right: 40px; }
         .stat-number { font-size: 32px; font-weight: bold; color: #2c3e50; }
-        .menu a { display: inline-block; margin-right: 20px; padding: 10px 20px; background: #3498db; color: white; text-decoration: none; border-radius: 5px; }
+        .menu a { display: inline-block; margin-right: 20px; padding: 10px 20px; background: #3498db; color: white; text-decoration: none; border-radius: 5px; margin-bottom: 10px; }
         .menu a:hover { background: #2980b9; }
     </style>
 </head>
@@ -22,6 +22,7 @@
         <a href="/list">📋 Tahmin Listesi</a>
         <a href="/add">➕ Yeni Tahmin Ekle</a>
         <a href="/adjustments">🔧 Bölünme Düzeltmeleri</a>
+        <a href="/kapanis_duzenle">📊 Kapanış Düzenle</a>
     </div>
     <script>
         fetch('/api/stats').then(r=>r.json()).then(d=>{
