@@ -3,7 +3,8 @@ import sqlite3
 from datetime import datetime
 
 app = Flask(__name__)
-DB_PATH = "borsa_verisi.db"
+import os
+DB_PATH = os.path.join(os.path.dirname(__file__), "borsa_verisi.db")
 
 def get_db():
     return sqlite3.connect(DB_PATH)
