@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin - Yeni Düzeltme</title>
+    <style>
+        body { font-family: Arial; margin: 40px; }
+        input, select { width: 300px; padding: 8px; margin: 5px 0; }
+        button { padding: 10px 20px; background: #27ae60; color: white; border: none; cursor: pointer; }
+        .error { background: #e74c3c; color: white; padding: 10px; border-radius: 5px; margin-bottom: 20px; }
+        .info { background: #3498db; color: white; padding: 10px; border-radius: 5px; margin-bottom: 20px; }
+        .menu a { display: inline-block; margin-right: 20px; padding: 10px 20px; background: #3498db; color: white; text-decoration: none; border-radius: 5px; margin-bottom: 20px; }
+        .menu a:hover { background: #2980b9; }
+    </style>
+</head>
+<body>
+    <div class="menu">
+        <a href="/">Ana Sayfa</a>
+        <a href="/adjustments">Düzeltmeler</a>
+    </div>
+    
+    <h2>Yeni Bölünme Düzeltmesi Ekle</h2>
+    
+    <div class="info">
+        <strong>Nasıl çalışır?</strong><br>
+        - Belirtilen tarihten <strong>ÖNCEKİ</strong> tüm hedef fiyatlar, verilen orana bölünür.<br>
+        - Örnek: %100 bedelsiz (2'ye 1 bölünme) için oran = 2<br>
+        - Örnek: %200 bedelli için oran = 3<br>
+        - Bu işlem otomatik olarak uygulanır ve geri alınabilir.
+    </div>
+    
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+    
+    <form method="POST">
+        <div>
+            <label>Hisse Kodu:</label><br>
+            <input type="text" name="hisse_kodu" placeholder="Örn: KONTR" required>
+        </div>
+        <div>
+            <label>Bölünme Tarihi:</label><br>
+            <input type="date" name="bolunme_tarihi" required>
+        </div>
+        <div>
+            <label>Düzeltme Oranı:</label><br>
+            <input type="number" step="0.01" name="oran" placeholder="Örn: 2.0" required>
+            <small>Fiyatlar bu orana bölünecek. %100 bedelsiz = 2.0</small>
+        </div>
+        <div>
+            <label>Açıklama (isteğe bağlı):</label><br>
+            <input type="text" name="aciklama" placeholder="Örn: %100 bedelsiz sermaye artırımı">
+        </div>
+        <br>
+        <button type="submit">✅ DÜZELTMEYİ UYGULA</button>
+    </form>
+</body>
+</html>

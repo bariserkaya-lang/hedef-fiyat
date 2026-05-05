@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin - Düzeltmeler</title>
+    <style>
+        body { font-family: Arial; margin: 40px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background: #3498db; color: white; }
+        .delete { color: red; text-decoration: none; }
+        .menu a { display: inline-block; margin-right: 20px; padding: 10px 20px; background: #3498db; color: white; text-decoration: none; border-radius: 5px; margin-bottom: 20px; }
+        .menu a:hover { background: #2980b9; }
+    </style>
+</head>
+<body>
+    <div class="menu">
+        <a href="/">Ana Sayfa</a>
+        <a href="/list">Tahmin Listesi</a>
+        <a href="/add">Yeni Tahmin</a>
+        <a href="/add_adjustment">Yeni Düzeltme</a>
+    </div>
+    
+    <h2>Bölünme Düzeltmeleri</h2>
+    
+    <table>
+        <thead>
+            <tr><th>ID</th><th>Hisse</th><th>Düzeltme Tarihi</th><th>Oran</th><th>Açıklama</th><th>Oluşturulma</th><th>İşlem</th></tr>
+        </thead>
+        <tbody>
+            {% for adj in adjustments %}
+            <tr>
+                <td>{{ adj[0] }}</td>
+                <td>{{ adj[1] }}</td>
+                <td>{{ adj[2] }}</td>
+                <td>{{ adj[3] }}</td>
+                <td>{{ adj[4] }}</td>
+                <td>{{ adj[5] }}</td>
+                <td><a href="/delete_adjustment/{{ adj[0] }}" class="delete" onclick="return confirm('Bu düzeltmeyi silmek tüm etkilerini geri alır. Devam?')">🗑️ Sil</a></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>
