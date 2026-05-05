@@ -1,9 +1,9 @@
 from flask import Flask, render_template, request, redirect, url_for, jsonify
 import sqlite3
 from datetime import datetime
+import os
 
 app = Flask(__name__)
-import os
 DB_PATH = os.path.join(os.path.dirname(__file__), "borsa_verisi.db")
 
 def get_db():
