@@ -16,7 +16,6 @@ def get_db():
 
 def github_upload():
     if not GITHUB_TOKEN:
-        print("GitHub token yok")
         return False
     try:
         with open(DB_PATH, "rb") as f:
@@ -30,8 +29,7 @@ def github_upload():
             data["sha"] = sha
         r2 = requests.put(url, headers=headers, json=data)
         return r2.status_code in [200, 201]
-    except Exception as e:
-        print(f"Yedekleme hatası: {e}")
+    except:
         return False
 
 @app.route('/')
@@ -72,10 +70,8 @@ def add_prediction():
             conn = get_db()
             c = conn.cursor()
             
-            c.execute("""
-                SELECT 1 FROM tahminler 
-                WHERE tarih = ? AND hisse_kodu = ? AND araci_kurum = ? AND yeni_hedef_fiyat = ?
-            """, (tarih, hisse, kurum, yeni_fiyat))
+            c.execute("SELECT 1 FROM tahminler WHERE tarih = ? AND hisse_kodu = ? AND araci_kurum = ? AND yeni_hedef_fiyat = ?",
+                      (tarih, hisse, kurum, yeni_fiyat))
             
             if c.fetchone():
                 conn.close()
@@ -116,8 +112,6 @@ def api_stats():
     conn.close()
     return jsonify({'total': total, 'stocks': stocks, 'brokers': brokers})
 
-# ======================== MANUEL DÜZELTME SAYFALARI ========================
-
 @app.route('/adjustments')
 def adjustments():
     conn = get_db()
@@ -146,7 +140,6 @@ def add_adjustment():
             c.execute("UPDATE tahminler SET eski_hedef_fiyat = eski_hedef_fiyat / ?, yeni_hedef_fiyat = yeni_hedef_fiyat / ? WHERE hisse_kodu = ? AND tarih < ?",
                       (oran, oran, hisse_kodu, bolunme_tarihi))
             
-            updated = c.rowcount
             conn.commit()
             github_upload()
             conn.close()
@@ -176,8 +169,6 @@ def delete_adjustment(adj_id):
     conn.close()
     return redirect(url_for('adjustments'))
 
-# ======================== KAPANIŞ FİYATI DÜZENLEME ========================
-
 @app.route('/kapanis_duzenle', methods=['GET', 'POST'])
 def kapanis_duzenle():
     if request.method == 'POST':
@@ -186,7 +177,7 @@ def kapanis_duzenle():
         c = conn.cursor()
         
         c.execute("SELECT tarih, tarihsel_kapanis FROM tahminler WHERE hisse_kodu = ? ORDER BY tarih ASC", (hisse,))
-        mevcut_fiyatlar = {tarih: fiyat for tarih, fiyat in c.fetchall()}
+        rows = c.fetchall()
         
         yeni_referans = None
         referans_tarih = None
@@ -200,13 +191,18 @@ def kapanis_duzenle():
                 except:
                     pass
         
-        if yeni_referans and referans_tarih and referans_tarih in mevcut_fiyatlar:
-            eski_referans = mevcut_fiyatlar[referans_tarih]
-            if eski_referans > 0:
+        if yeni_referans and referans_tarih:
+            eski_referans = None
+            for tarih, fiyat in rows:
+                if tarih == referans_tarih:
+                    eski_referans = fiyat
+                    break
+            
+            if eski_referans and eski_referans > 0:
                 oran = yeni_referans / eski_referans
-                for tarih, eski_fiyat in mevcut_fiyatlar.items():
+                for tarih, fiyat in rows:
                     c.execute("UPDATE tahminler SET tarihsel_kapanis = ? WHERE hisse_kodu = ? AND tarih = ?",
-                              (round(eski_fiyat * oran, 4), hisse, tarih))
+                              (round(fiyat * oran, 4), hisse, tarih))
                 conn.commit()
                 github_upload()
         
@@ -225,6 +221,23 @@ def kapanis_duzenle():
         conn.close()
         
         return render_template('kapanis_duzenle.html', hisse=hisse, kapanislar=rows)
+
+@app.route('/fix_kontr')
+def fix_kontr():
+    conn = get_db()
+    c = conn.cursor()
+    
+    c.execute("UPDATE tahminler SET eski_hedef_fiyat = eski_hedef_fiyat / 3.25, yeni_hedef_fiyat = yeni_hedef_fiyat / 3.25 WHERE hisse_kodu = 'KONTR' AND tarih < '2024-07-19'")
+    count1 = c.rowcount
+    
+    c.execute("UPDATE tahminler SET eski_hedef_fiyat = eski_hedef_fiyat / 2.0, yeni_hedef_fiyat = yeni_hedef_fiyat / 2.0 WHERE hisse_kodu = 'KONTR' AND tarih < '2025-12-09'")
+    count2 = c.rowcount
+    
+    conn.commit()
+    github_upload()
+    conn.close()
+    
+    return f"KONTR düzeltildi: {count1} satır (2024-07-19 oncesi), {count2} satir (2025-12-09 oncesi)"
 
 def init_adjustments_table():
     conn = get_db()
