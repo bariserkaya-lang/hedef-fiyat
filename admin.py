@@ -136,6 +136,8 @@ def add_adjustment():
             oran = float(request.form['oran'])
             aciklama = request.form.get('aciklama', '')
             
+            print(f"!!!!! DÜZELTME EKLENİYOR: {hisse_kodu}, {bolunme_tarihi}, {oran}")
+            
             conn = get_db()
             c = conn.cursor()
             
@@ -143,10 +145,8 @@ def add_adjustment():
                 INSERT INTO bolunme_duzeltmeleri (hisse_kodu, bolunme_tarihi, oran, aciklama)
                 VALUES (?, ?, ?, ?)
             """, (hisse_kodu, bolunme_tarihi, oran, aciklama))
-            
             conn.commit()
             
-            # Düzeltmeyi UYGULA
             c.execute("""
                 UPDATE tahminler 
                 SET eski_hedef_fiyat = eski_hedef_fiyat / ?,
@@ -155,15 +155,15 @@ def add_adjustment():
             """, (oran, oran, hisse_kodu, bolunme_tarihi))
             
             updated = c.rowcount
+            print(f"!!!!! {updated} SATIR GÜNCELLENDİ")
+            
             conn.commit()
-            
-            # GitHub'a yedekle
             github_upload()
-            
             conn.close()
             
             return redirect(url_for('adjustments'))
         except Exception as e:
+            print(f"!!!!! HATA: {e}")
             return render_template('add_adjustment.html', error=str(e))
     
     return render_template('add_adjustment.html', error=None)
@@ -178,7 +178,6 @@ def delete_adjustment(adj_id):
     
     if adj:
         hisse_kodu, bolunme_tarihi, oran = adj
-        # Düzeltmeyi GERİ AL
         c.execute("""
             UPDATE tahminler 
             SET eski_hedef_fiyat = eski_hedef_fiyat * ?,
@@ -201,7 +200,6 @@ def kapanis_duzenle():
         conn = get_db()
         c = conn.cursor()
         
-        # Mevcut tüm kapanış fiyatlarını al
         c.execute("""
             SELECT tarih, tarihsel_kapanis 
             FROM tahminler 
@@ -210,7 +208,6 @@ def kapanis_duzenle():
         """, (hisse,))
         mevcut_fiyatlar = {tarih: fiyat for tarih, fiyat in c.fetchall()}
         
-        # Orantısal düzeltme: Kullanıcının girdiği tarih ve fiyatı bul
         yeni_referans = None
         referans_tarih = None
         
@@ -228,7 +225,6 @@ def kapanis_duzenle():
             if eski_referans > 0:
                 oran = yeni_referans / eski_referans
                 
-                # Tüm fiyatları orantısal olarak güncelle
                 for tarih, eski_fiyat in mevcut_fiyatlar.items():
                     yeni_fiyat = eski_fiyat * oran
                     c.execute("""
@@ -247,7 +243,6 @@ def kapanis_duzenle():
         
         conn.close()
         
-        # Güncel verileri tekrar göster
         conn = get_db()
         c = conn.cursor()
         c.execute("""
