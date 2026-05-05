@@ -139,32 +139,51 @@ def sil_tahmin(tahmin_id):
     except Exception as e:
         return False, str(e)
 
+# Session state başlangıcı
 if "dashboard_data" not in st.session_state:
     st.session_state.dashboard_data = get_dashboard_data()
+if "fiyatlar" not in st.session_state:
+    st.session_state.fiyatlar = {}
 
 st.title("📈 BIST Hedef Fiyat Portalı")
 tabs = st.tabs(["📊 Dashboard", "🔍 Hisse Analizi", "➕ Yeni Tahmin Ekle", "🗑️ Yönetim"])
 
+# ========================= TAB 1: DASHBOARD =========================
 with tabs[0]:
     st.subheader("Güncel Hedef Fiyat Ortalamaları")
+    
     df_view = st.session_state.dashboard_data.copy()
-    if "Son Kapanış" not in df_view.columns:
+    
+    if st.session_state.fiyatlar:
+        df_view["Son Kapanış"] = df_view["Hisse"].map(st.session_state.fiyatlar)
+        df_view["Potansiyel %"] = 0.0
+        mask = df_view["Son Kapanış"] > 0
+        df_view.loc[mask, "Potansiyel %"] = (df_view["Ortalama Hedef Fiyat"] / df_view["Son Kapanış"] - 1).round(3) * 100
+        df_view["Potansiyel %"] = df_view["Potansiyel %"].round(1)
+    else:
         df_view["Son Kapanış"] = 0.0
         df_view["Potansiyel %"] = 0.0
-    if st.button("🔄 Fiyatları Güncelle"):
+    
+    if st.button("🔄 Fiyatları Güncelle", type="primary"):
         with st.spinner("Fiyatlar çekiliyor..."):
-            fiyatlar = fetch_current_prices(df_view["Hisse"].tolist())
+            hisseler = df_view["Hisse"].tolist()
+            fiyatlar = fetch_current_prices(hisseler)
+            st.session_state.fiyatlar = fiyatlar
             df_view["Son Kapanış"] = df_view["Hisse"].map(fiyatlar)
             df_view["Potansiyel %"] = 0.0
             mask = df_view["Son Kapanış"] > 0
             df_view.loc[mask, "Potansiyel %"] = (df_view["Ortalama Hedef Fiyat"] / df_view["Son Kapanış"] - 1).round(3) * 100
+            df_view["Potansiyel %"] = df_view["Potansiyel %"].round(1)
             st.session_state.dashboard_data = df_view
+            st.success("Fiyatlar güncellendi!")
             st.rerun()
+    
     st.dataframe(df_view, use_container_width=True)
     sec = st.selectbox("Hisse seç", df_view["Hisse"].tolist(), key="dashboard_hisse")
     if sec:
         st.session_state.selected_stock = sec
 
+# ========================= TAB 2: HİSSE ANALİZİ =========================
 with tabs[1]:
     hisseler = st.session_state.dashboard_data["Hisse"].tolist()
     if hisseler:
@@ -183,6 +202,7 @@ with tabs[1]:
                 st.plotly_chart(fig, use_container_width=True)
                 st.dataframe(detay, use_container_width=True)
 
+# ========================= TAB 3: YENİ TAHMİN EKLE =========================
 with tabs[2]:
     st.subheader("➕ Yeni Tahmin Ekle")
     with st.form("ekle_form"):
@@ -207,6 +227,7 @@ with tabs[2]:
                 else:
                     st.error(msg)
 
+# ========================= TAB 4: YÖNETİM =========================
 with tabs[3]:
     st.subheader("🗑️ Tahmin Silme")
     hisseler = st.session_state.dashboard_data["Hisse"].tolist()
