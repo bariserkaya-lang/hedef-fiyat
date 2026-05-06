@@ -25,7 +25,7 @@ def github_upload():
         headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
         r = requests.get(url, headers=headers)
         sha = r.json().get("sha", "") if r.status_code == 200 else ""
-        data = {"message": f"Yedek {datetime.now()}", "content": content, "branch": "main"}
+        data = {"message": f"Admin yedek {datetime.now()}", "content": content, "branch": "main"}
         if sha:
             data["sha"] = sha
         r2 = requests.put(url, headers=headers, json=data)
@@ -156,13 +156,11 @@ def add_adjustment():
 
             conn = get_db()
             c = conn.cursor()
-
             c.execute("INSERT INTO bolunme_duzeltmeleri (hisse_kodu, bolunme_tarihi, oran, aciklama) VALUES (?,?,?,?)",
                       (hisse_kodu, bolunme_tarihi, oran, aciklama))
             conn.commit()
             github_upload()
             conn.close()
-
             return redirect(url_for('adjustments'))
         except Exception as e:
             return render_template('add_adjustment.html', error=str(e))
