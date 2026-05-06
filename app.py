@@ -50,25 +50,69 @@ def github_upload():
         return False
 
 @st.cache_data(ttl=300)
+def get_adjustment_factor(hisse_kodu, hedef_tarihi):
+    """
+    Hedef tarihinden SONRA gerçekleşen tüm bölünmelerin çarpanını döndürür.
+    Bölünme öncesi hedefler bu çarpana bölünerek düzeltilir.
+    """
+    try:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("""
+            SELECT bolunme_carpani FROM adjustments
+            WHERE hisse_kodu =? AND bolunme_tarihi >?
+            ORDER BY bolunme_tarihi ASC
+        """, (hisse_kodu, hedef_tarihi))
+
+        toplam_carpan = 1.0
+        for (carpan,) in c.fetchall():
+            toplam_carpan *= float(carpan)
+        conn.close()
+        return toplam_carpan
+    except:
+        return 1.0
+
+@st.cache_data(ttl=300)
 def get_dashboard_data():
     conn = get_connection()
+    # Tüm tahminleri çek, tarih bilgisiyle beraber
     query = """
-    WITH son_tahminler AS (
-        SELECT hisse_kodu, araci_kurum, yeni_hedef_fiyat,
-               ROW_NUMBER() OVER(PARTITION BY hisse_kodu, araci_kurum ORDER BY rowid DESC) as rn
-        FROM tahminler
-    )
-    SELECT 
-        hisse_kodu as 'Hisse',
-        ROUND(AVG(yeni_hedef_fiyat), 2) as 'Ortalama Hedef Fiyat',
-        COUNT(DISTINCT araci_kurum) as 'Kurum Sayısı'
-    FROM son_tahminler WHERE rn = 1 
-    GROUP BY hisse_kodu 
-    ORDER BY hisse_kodu
+    SELECT
+        hisse_kodu,
+        tarih,
+        araci_kurum,
+        yeni_hedef_fiyat,
+        ROW_NUMBER() OVER(PARTITION BY hisse_kodu, araci_kurum ORDER BY rowid DESC) as rn
+    FROM tahminler
     """
     df = pd.read_sql(query, conn)
     conn.close()
-    return df
+
+    if df.empty:
+        return pd.DataFrame(columns=['Hisse', 'Ortalama Hedef Fiyat', 'Kurum Sayısı'])
+
+    # Her tahmin için bölünme düzeltmesi uygula
+    duzeltilmis_fiyatlar = []
+    for _, row in df.iterrows():
+        carpan = get_adjustment_factor(row['hisse_kodu'], row['tarih'])
+        duzeltilmis_fiyatlar.append(row['yeni_hedef_fiyat'] / carpan)
+
+    df['duzeltilmis_hedef'] = duzeltilmis_fiyatlar
+
+    # Sadece her kurumun son tahminini al
+    son_tahminler = df[df['rn'] == 1]
+
+    # Ortalama al
+    result = son_tahminler.groupby('hisse_kodu').agg({
+        'duzeltilmis_hedef': 'mean',
+        'araci_kurum': 'nunique'
+    }).reset_index()
+
+    result.columns = ['Hisse', 'Ortalama Hedef Fiyat', 'Kurum Sayısı']
+    result['Ortalama Hedef Fiyat'] = result['Ortalama Hedef Fiyat'].round(2)
+    result = result.sort_values('Hisse')
+
+    return result
 
 def get_hisse_detay(hisse_kodu):
     conn = get_connection()
@@ -77,12 +121,22 @@ def get_hisse_detay(hisse_kodu):
         FROM tahminler WHERE hisse_kodu = '{hisse_kodu}' ORDER BY rowid ASC
     """, conn)
     conn.close()
+
     if df.empty:
         return df
+
+    # Bölünme düzeltmesi uygula
+    for idx, row in df.iterrows():
+        carpan = get_adjustment_factor(hisse_kodu, row['tarih'])
+        df.at[idx, 'yeni_hedef_fiyat'] = row['yeni_hedef_fiyat'] / carpan
+        if pd.notna(row['eski_hedef_fiyat']) and row['eski_hedef_fiyat'] > 0:
+            df.at[idx, 'eski_hedef_fiyat'] = row['eski_hedef_fiyat'] / carpan
+
     dinamik_ortalamalar = []
     for i in range(len(df)):
         en_sonlar = df.iloc[:i+1].groupby('araci_kurum').last().reset_index()
         dinamik_ortalamalar.append(round(en_sonlar['yeni_hedef_fiyat'].mean(), 2))
+
     df['Dinamik Ortalama'] = dinamik_ortalamalar
     df['Prim Potansiyeli %'] = ((df['Dinamik Ortalama'] / df['tarihsel_kapanis']) - 1).round(2) * 100
     df = df.rename(columns={
@@ -103,6 +157,7 @@ def fetch_current_prices(hisse_listesi):
             prices[hisse] = 0.0
         time.sleep(0.2)
         progress_bar.progress((i+1)/len(hisse_listesi))
+    progress_bar.empty()
     return prices
 
 def add_prediction(hisse_kodu, araci_kurum, yeni_fiyat, eski_fiyat, tavsiye, kapanis):
@@ -129,7 +184,7 @@ def sil_tahmin(tahmin_id):
     try:
         conn = get_connection()
         c = conn.cursor()
-        c.execute("DELETE FROM tahminler WHERE rowid = ?", (tahmin_id,))
+        c.execute("DELETE FROM tahminler WHERE rowid =?", (tahmin_id,))
         deleted = c.rowcount
         conn.commit()
         conn.close()
@@ -151,9 +206,9 @@ tabs = st.tabs(["📊 Dashboard", "🔍 Hisse Analizi", "➕ Yeni Tahmin Ekle", 
 # ========================= TAB 1: DASHBOARD =========================
 with tabs[0]:
     st.subheader("Güncel Hedef Fiyat Ortalamaları")
-    
+
     df_view = st.session_state.dashboard_data.copy()
-    
+
     if st.session_state.fiyatlar:
         df_view["Son Kapanış"] = df_view["Hisse"].map(st.session_state.fiyatlar)
         df_view["Potansiyel %"] = 0.0
@@ -163,7 +218,7 @@ with tabs[0]:
     else:
         df_view["Son Kapanış"] = 0.0
         df_view["Potansiyel %"] = 0.0
-    
+
     if st.button("🔄 Fiyatları Güncelle", type="primary"):
         with st.spinner("Fiyatlar çekiliyor..."):
             hisseler = df_view["Hisse"].tolist()
@@ -177,15 +232,15 @@ with tabs[0]:
             st.session_state.dashboard_data = df_view
             st.success("Fiyatlar güncellendi!")
             st.rerun()
-    
+
     st.dataframe(df_view, use_container_width=True)
-    sec = st.selectbox("Hisse seç", df_view["Hisse"].tolist(), key="dashboard_hisse")
+    sec = st.selectbox("Hisse seç", df_view["Hisse"].tolist() if not df_view.empty else [], key="dashboard_hisse")
     if sec:
         st.session_state.selected_stock = sec
 
 # ========================= TAB 2: HİSSE ANALİZİ =========================
 with tabs[1]:
-    hisseler = st.session_state.dashboard_data["Hisse"].tolist()
+    hisseler = st.session_state.dashboard_data["Hisse"].tolist() if not st.session_state.dashboard_data.empty else []
     if hisseler:
         idx = 0
         if "selected_stock" in st.session_state and st.session_state.selected_stock in hisseler:
@@ -198,16 +253,20 @@ with tabs[1]:
                 fig = go.Figure()
                 fig.add_trace(go.Scatter(x=graf["Tarih"], y=graf["Dinamik Ortalama"], mode="lines+markers", name="Dinamik Hedef"))
                 fig.add_trace(go.Scatter(x=graf["Tarih"], y=graf["Kapanış"], mode="lines+markers", name="Kapanış"))
-                fig.update_layout(height=500)
+                fig.update_layout(height=500, title=f"{sec_hisse} - Hedef Fiyat vs Kapanış")
                 st.plotly_chart(fig, use_container_width=True)
                 st.dataframe(detay, use_container_width=True)
+            else:
+                st.info("Bu hisse için veri bulunamadı")
+    else:
+        st.info("Henüz tahmin eklenmemiş")
 
 # ========================= TAB 3: YENİ TAHMİN EKLE =========================
 with tabs[2]:
     st.subheader("➕ Yeni Tahmin Ekle")
     with st.form("ekle_form"):
         c1, c2 = st.columns(2)
-        hisse = c1.text_input("Hisse Kodu")
+        hisse = c1.text_input("Hisse Kodu").upper()
         kurum = c1.text_input("Aracı Kurum")
         eski = c2.number_input("Eski Hedef Fiyat", min_value=0.0, step=0.1, format="%.2f")
         yeni = c2.number_input("Yeni Hedef Fiyat", min_value=0.0, step=0.1, format="%.2f")
@@ -216,12 +275,13 @@ with tabs[2]:
         submitted = st.form_submit_button("💾 KAYDET")
         if submitted:
             if not hisse or not kurum or yeni <= 0:
-                st.error("Eksik bilgi")
+                st.error("Hisse kodu, aracı kurum ve yeni hedef fiyat zorunlu")
             else:
                 ok, msg = add_prediction(hisse, kurum, yeni, eski, tavsiye, kapanis)
                 if ok:
                     st.success(msg)
                     st.balloons()
+                    st.cache_data.clear()
                     st.session_state.dashboard_data = get_dashboard_data()
                     st.rerun()
                 else:
@@ -230,7 +290,7 @@ with tabs[2]:
 # ========================= TAB 4: YÖNETİM =========================
 with tabs[3]:
     st.subheader("🗑️ Tahmin Silme")
-    hisseler = st.session_state.dashboard_data["Hisse"].tolist()
+    hisseler = st.session_state.dashboard_data["Hisse"].tolist() if not st.session_state.dashboard_data.empty else []
     if hisseler:
         sil_hisse = st.selectbox("Hisse seç", hisseler, key="silme_hisse")
         if sil_hisse:
@@ -238,15 +298,24 @@ with tabs[3]:
             if not detay.empty:
                 st.dataframe(detay[["ID","Tarih","Aracı Kurum","Yeni Hedef Fiyat"]])
                 sil_id = st.number_input("Silinecek ID", min_value=1, step=1, key="sil_id")
-                if st.button("🗑️ SİL"):
+                if st.button("🗑️ SİL", type="primary"):
                     ok, msg = sil_tahmin(sil_id)
                     if ok:
                         st.success(msg)
+                        st.cache_data.clear()
                         st.session_state.dashboard_data = get_dashboard_data()
                         st.rerun()
+                    else:
+                        st.error(msg)
+            else:
+                st.info("Bu hisse için tahmin yok")
+    else:
+        st.info("Silinecek tahmin bulunamadı")
+
+    st.divider()
     if st.button("📤 GitHub'a MANUEL YEDEKLE"):
         with st.spinner("Yedekleniyor..."):
             if github_upload():
                 st.success("Yedeklendi")
             else:
-                st.error("Hata")
+                st.error("Hata: GitHub token kontrol edin")
