@@ -31,6 +31,24 @@ if not os.path.exists(DB_PATH):
 def get_connection():
     return sqlite3.connect(DB_PATH)
 
+def init_tables():
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS bolunme_duzeltmeleri (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            hisse_kodu TEXT NOT NULL,
+            bolunme_tarihi TEXT NOT NULL,
+            oran REAL NOT NULL,
+            aciklama TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+init_tables()
+
 def github_upload():
     if not GITHUB_TOKEN:
         return False
@@ -54,30 +72,18 @@ def get_adjustment_factor(hisse_kodu, hedef_tarihi):
     try:
         conn = get_connection()
         c = conn.cursor()
-        
-        # Önce tabloda kaç bölünme var görelim
-        c.execute("SELECT COUNT(*) FROM bolunme_duzeltmeleri WHERE hisse_kodu =?", (hisse_kodu,))
-        toplam = c.fetchone()[0]
-        
         c.execute("""
-            SELECT oran, bolunme_tarihi FROM bolunme_duzeltmeleri
+            SELECT oran FROM bolunme_duzeltmeleri
             WHERE hisse_kodu =? AND bolunme_tarihi >?
             ORDER BY bolunme_tarihi ASC
         """, (hisse_kodu, hedef_tarihi))
 
-        rows = c.fetchall()
         toplam_carpan = 1.0
-        for (carpan,) in rows:
+        for (carpan,) in c.fetchall():
             toplam_carpan *= float(carpan)
         conn.close()
-        
-        # Sadece KONTR için debug yaz
-        if hisse_kodu == 'KONTR':
-            st.sidebar.write(f"DEBUG KONTR {hedef_tarihi}: Toplam {toplam} bölünme var, {len(rows)} tanesi bu tarihten sonra. Çarpan: {toplam_carpan}")
-        
         return toplam_carpan
-    except Exception as e:
-        st.sidebar.write(f"DEBUG HATA: {e}")
+    except:
         return 1.0
 
 @st.cache_data(ttl=60)
