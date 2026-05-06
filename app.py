@@ -58,11 +58,7 @@ def init_tables():
     conn.commit()
     conn.close()
 
-# 1. Önce DB yoksa GitHub'dan indir
-if not os.path.exists(DB_PATH):
-    github_download()
-
-# 2. Sonra tablolar var mı kontrol et, yoksa oluştur
+github_download()
 init_tables()
 
 def github_upload():
@@ -82,6 +78,18 @@ def github_upload():
         return r2.status_code in [200, 201]
     except:
         return False
+
+@st.cache_data(ttl=300)
+def fetch_current_prices(hisse_listesi):
+    prices = {}
+    for hisse in hisse_listesi:
+        try:
+            data = yf.Ticker(f"{hisse}.IS").history(period="1d")
+            prices[hisse] = float(data['Close'].iloc[-1]) if not data.empty else 0.0
+        except:
+            prices[hisse] = 0.0
+        time.sleep(0.1)
+    return prices
 
 @st.cache_data(ttl=60)
 def get_adjustment_factor(hisse_kodu, hedef_tarihi):
@@ -179,20 +187,6 @@ def get_hisse_detay(hisse_kodu):
     })
     return df
 
-def fetch_current_prices(hisse_listesi):
-    prices = {}
-    progress_bar = st.progress(0)
-    for i, hisse in enumerate(hisse_listesi):
-        try:
-            data = yf.Ticker(f"{hisse}.IS").history(period="1d")
-            prices[hisse] = float(data['Close'].iloc[-1]) if not data.empty else 0.0
-        except:
-            prices[hisse] = 0.0
-        time.sleep(0.2)
-        progress_bar.progress((i+1)/len(hisse_listesi))
-    progress_bar.empty()
-    return prices
-
 def add_prediction(hisse_kodu, araci_kurum, yeni_fiyat, eski_fiyat, tavsiye, kapanis):
     conn = get_connection()
     c = conn.cursor()
@@ -227,30 +221,33 @@ def sil_tahmin(tahmin_id):
     except Exception as e:
         return False, str(e)
 
-if "dashboard_data" not in st.session_state:
-    st.session_state.dashboard_data = get_dashboard_data()
+# Dashboard verisini çek
+dashboard_data = get_dashboard_data()
+
+# Fiyatlar boşsa otomatik çek
 if "fiyatlar" not in st.session_state:
-    st.session_state.fiyatlar = {}
+    if not dashboard_data.empty:
+        with st.spinner("Güncel fiyatlar çekiliyor... İlk açılış 15-20 saniye sürebilir"):
+            hisseler = dashboard_data["Hisse"].tolist()
+            st.session_state.fiyatlar = fetch_current_prices(hisseler)
+    else:
+        st.session_state.fiyatlar = {}
 
 st.title("📈 BIST Hedef Fiyat Portalı")
 tabs = st.tabs(["📊 Dashboard", "🔍 Hisse Analizi", "➕ Yeni Tahmin Ekle", "🗑️ Yönetim"])
 
 with tabs[0]:
     st.subheader("Güncel Hedef Fiyat Ortalamaları")
-    df_view = st.session_state.dashboard_data.copy()
+    df_view = dashboard_data.copy()
 
     if df_view.empty:
         st.warning("Henüz tahmin eklenmemiş veya veritabanı boş.")
     else:
-        if st.session_state.fiyatlar:
-            df_view["Son Kapanış"] = df_view["Hisse"].map(st.session_state.fiyatlar)
-            df_view["Potansiyel %"] = 0.0
-            mask = df_view["Son Kapanış"] > 0
-            df_view.loc[mask, "Potansiyel %"] = (df_view["Ortalama Hedef Fiyat"] / df_view["Son Kapanış"] - 1).round(3) * 100
-            df_view["Potansiyel %"] = df_view["Potansiyel %"].round(1)
-        else:
-            df_view["Son Kapanış"] = 0.0
-            df_view["Potansiyel %"] = 0.0
+        df_view["Son Kapanış"] = df_view["Hisse"].map(st.session_state.fiyatlar)
+        df_view["Potansiyel %"] = 0.0
+        mask = df_view["Son Kapanış"] > 0
+        df_view.loc[mask, "Potansiyel %"] = (df_view["Ortalama Hedef Fiyat"] / df_view["Son Kapanış"] - 1).round(3) * 100
+        df_view["Potansiyel %"] = df_view["Potansiyel %"].round(1)
 
         if st.button("🔄 Fiyatları Güncelle", type="primary"):
             with st.spinner("Fiyatlar çekiliyor..."):
@@ -262,7 +259,6 @@ with tabs[0]:
                 mask = df_view["Son Kapanış"] > 0
                 df_view.loc[mask, "Potansiyel %"] = (df_view["Ortalama Hedef Fiyat"] / df_view["Son Kapanış"] - 1).round(3) * 100
                 df_view["Potansiyel %"] = df_view["Potansiyel %"].round(1)
-                st.session_state.dashboard_data = df_view
                 st.success("Fiyatlar güncellendi!")
                 st.rerun()
 
@@ -272,7 +268,7 @@ with tabs[0]:
             st.session_state.selected_stock = sec
 
 with tabs[1]:
-    hisseler = st.session_state.dashboard_data["Hisse"].tolist() if not st.session_state.dashboard_data.empty else []
+    hisseler = dashboard_data["Hisse"].tolist() if not dashboard_data.empty else []
     if hisseler:
         idx = 0
         if "selected_stock" in st.session_state and st.session_state.selected_stock in hisseler:
@@ -313,14 +309,13 @@ with tabs[2]:
                     st.success(msg)
                     st.balloons()
                     st.cache_data.clear()
-                    st.session_state.dashboard_data = get_dashboard_data()
                     st.rerun()
                 else:
                     st.error(msg)
 
 with tabs[3]:
     st.subheader("🗑️ Tahmin Silme")
-    hisseler = st.session_state.dashboard_data["Hisse"].tolist() if not st.session_state.dashboard_data.empty else []
+    hisseler = dashboard_data["Hisse"].tolist() if not dashboard_data.empty else []
     if hisseler:
         sil_hisse = st.selectbox("Hisse seç", hisseler, key="silme_hisse")
         if sil_hisse:
@@ -333,7 +328,6 @@ with tabs[3]:
                     if ok:
                         st.success(msg)
                         st.cache_data.clear()
-                        st.session_state.dashboard_data = get_dashboard_data()
                         st.rerun()
                     else:
                         st.error(msg)
