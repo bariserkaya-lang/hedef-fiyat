@@ -34,7 +34,7 @@ def github_upload():
         print(f"Yedekleme hatası: {e}")
         return False
 
-def init_adjustments_table():
+def init_tables():
     conn = get_db()
     c = conn.cursor()
     c.execute("""
@@ -50,7 +50,7 @@ def init_adjustments_table():
     conn.commit()
     conn.close()
 
-init_adjustments_table()
+init_tables()
 
 @app.route('/')
 def index():
