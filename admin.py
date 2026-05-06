@@ -34,6 +34,24 @@ def github_upload():
         print(f"Yedekleme hatası: {e}")
         return False
 
+def init_adjustments_table():
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS bolunme_duzeltmeleri (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            hisse_kodu TEXT NOT NULL,
+            bolunme_tarihi TEXT NOT NULL,
+            oran REAL NOT NULL,
+            aciklama TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+init_adjustments_table()
+
 @app.route('/')
 def index():
     conn = get_db()
@@ -48,9 +66,9 @@ def list_predictions():
     conn = get_db()
     c = conn.cursor()
     c.execute("""
-        SELECT rowid, tarih, hisse_kodu, araci_kurum, yeni_hedef_fiyat, tarihsel_kapanis, tavsiye 
-        FROM tahminler 
-        ORDER BY tarih DESC, hisse_kodu 
+        SELECT rowid, tarih, hisse_kodu, araci_kurum, yeni_hedef_fiyat, tarihsel_kapanis, tavsiye
+        FROM tahminler
+        ORDER BY tarih DESC, hisse_kodu
         LIMIT 100
     """)
     rows = c.fetchall()
@@ -64,42 +82,44 @@ def add_prediction():
             tarih = request.form['tarih']
             hisse = request.form['hisse'].upper()
             kurum = request.form['kurum']
-            eski_fiyat = float(request.form['eski_fiyat'])
+            eski_fiyat = float(request.form['eski_fiyat']) if request.form['eski_fiyat'] else 0
             yeni_fiyat = float(request.form['yeni_fiyat'])
-            kapanis = float(request.form['kapanis'])
+            kapanis = float(request.form['kapanis']) if request.form['kapanis'] else 0
             tavsiye = request.form['tavsiye']
-            
+
             conn = get_db()
             c = conn.cursor()
-            
+
             c.execute("""
-                SELECT 1 FROM tahminler 
-                WHERE tarih = ? AND hisse_kodu = ? AND araci_kurum = ? AND yeni_hedef_fiyat = ?
+                SELECT 1 FROM tahminler
+                WHERE tarih =? AND hisse_kodu =? AND araci_kurum =? AND yeni_hedef_fiyat =?
             """, (tarih, hisse, kurum, yeni_fiyat))
-            
+
             if c.fetchone():
                 conn.close()
                 return render_template('add.html', error="Bu kayıt zaten var!")
-            
+
             c.execute("""
                 INSERT INTO tahminler (tarih, araci_kurum, hisse_kodu, eski_hedef_fiyat, yeni_hedef_fiyat, tavsiye, tarihsel_kapanis)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?,?,?,?,?,?,?)
             """, (tarih, kurum, hisse, eski_fiyat, yeni_fiyat, tavsiye, kapanis))
-            
+
             conn.commit()
+            github_upload()
             conn.close()
             return redirect(url_for('list_predictions'))
         except Exception as e:
             return render_template('add.html', error=str(e))
-    
+
     return render_template('add.html', error=None)
 
 @app.route('/delete/<int:rowid>')
 def delete_prediction(rowid):
     conn = get_db()
     c = conn.cursor()
-    c.execute("DELETE FROM tahminler WHERE rowid = ?", (rowid,))
+    c.execute("DELETE FROM tahminler WHERE rowid =?", (rowid,))
     conn.commit()
+    github_upload()
     conn.close()
     return redirect(url_for('list_predictions'))
 
@@ -133,43 +153,29 @@ def add_adjustment():
             bolunme_tarihi = request.form['bolunme_tarihi']
             oran = float(request.form['oran'])
             aciklama = request.form.get('aciklama', '')
-            
+
             conn = get_db()
             c = conn.cursor()
-            
-            c.execute("INSERT INTO bolunme_duzeltmeleri (hisse_kodu, bolunme_tarihi, oran, aciklama) VALUES (?, ?, ?, ?)",
+
+            c.execute("INSERT INTO bolunme_duzeltmeleri (hisse_kodu, bolunme_tarihi, oran, aciklama) VALUES (?,?,?,?)",
                       (hisse_kodu, bolunme_tarihi, oran, aciklama))
-            conn.commit()
-            
-            c.execute("UPDATE tahminler SET eski_hedef_fiyat = eski_hedef_fiyat / ?, yeni_hedef_fiyat = yeni_hedef_fiyat / ? WHERE hisse_kodu = ? AND tarih < ?",
-                      (oran, oran, hisse_kodu, bolunme_tarihi))
-            
             conn.commit()
             github_upload()
             conn.close()
-            
+
             return redirect(url_for('adjustments'))
         except Exception as e:
             return render_template('add_adjustment.html', error=str(e))
-    
+
     return render_template('add_adjustment.html', error=None)
 
 @app.route('/delete_adjustment/<int:adj_id>')
 def delete_adjustment(adj_id):
     conn = get_db()
     c = conn.cursor()
-    
-    c.execute("SELECT hisse_kodu, bolunme_tarihi, oran FROM bolunme_duzeltmeleri WHERE id = ?", (adj_id,))
-    adj = c.fetchone()
-    
-    if adj:
-        hisse_kodu, bolunme_tarihi, oran = adj
-        c.execute("UPDATE tahminler SET eski_hedef_fiyat = eski_hedef_fiyat * ?, yeni_hedef_fiyat = yeni_hedef_fiyat * ? WHERE hisse_kodu = ? AND tarih < ?",
-                  (oran, oran, hisse_kodu, bolunme_tarihi))
-        c.execute("DELETE FROM bolunme_duzeltmeleri WHERE id = ?", (adj_id,))
-        conn.commit()
-        github_upload()
-    
+    c.execute("DELETE FROM bolunme_duzeltmeleri WHERE id =?", (adj_id,))
+    conn.commit()
+    github_upload()
     conn.close()
     return redirect(url_for('adjustments'))
 
@@ -179,13 +185,13 @@ def kapanis_duzenle():
         hisse = request.form['hisse'].upper()
         conn = get_db()
         c = conn.cursor()
-        
-        c.execute("SELECT tarih, tarihsel_kapanis FROM tahminler WHERE hisse_kodu = ? ORDER BY tarih ASC", (hisse,))
+
+        c.execute("SELECT tarih, tarihsel_kapanis FROM tahminler WHERE hisse_kodu =? ORDER BY tarih ASC", (hisse,))
         rows = c.fetchall()
-        
+
         yeni_referans = None
         referans_tarih = None
-        
+
         for key, value in request.form.items():
             if key.startswith('kapanis_') and value:
                 referans_tarih = key.replace('kapanis_', '')
@@ -194,71 +200,37 @@ def kapanis_duzenle():
                     break
                 except:
                     pass
-        
+
         if yeni_referans and referans_tarih:
             eski_referans = None
             for tarih, fiyat in rows:
                 if tarih == referans_tarih:
                     eski_referans = fiyat
                     break
-            
+
             if eski_referans and eski_referans > 0:
                 oran = yeni_referans / eski_referans
                 for tarih, fiyat in rows:
-                    c.execute("UPDATE tahminler SET tarihsel_kapanis = ? WHERE hisse_kodu = ? AND tarih = ?",
+                    c.execute("UPDATE tahminler SET tarihsel_kapanis =? WHERE hisse_kodu =? AND tarih =?",
                               (round(fiyat * oran, 4), hisse, tarih))
                 conn.commit()
                 github_upload()
-        
+
         conn.close()
         return redirect(url_for('kapanis_duzenle', hisse=hisse))
-    
+
     else:
         hisse = request.args.get('hisse', '').upper()
         if not hisse:
             return render_template('kapanis_duzenle.html', hisse=None, kapanislar=None)
-        
+
         conn = get_db()
         c = conn.cursor()
-        c.execute("SELECT tarih, tarihsel_kapanis FROM tahminler WHERE hisse_kodu = ? ORDER BY tarih ASC", (hisse,))
+        c.execute("SELECT tarih, tarihsel_kapanis FROM tahminler WHERE hisse_kodu =? ORDER BY tarih ASC", (hisse,))
         rows = c.fetchall()
         conn.close()
-        
+
         return render_template('kapanis_duzenle.html', hisse=hisse, kapanislar=rows)
-
-@app.route('/fix_kontr')
-def fix_kontr():
-    conn = get_db()
-    c = conn.cursor()
-    
-    c.execute("UPDATE tahminler SET eski_hedef_fiyat = eski_hedef_fiyat / 3.25, yeni_hedef_fiyat = yeni_hedef_fiyat / 3.25 WHERE hisse_kodu = 'KONTR' AND tarih < '2024-07-19'")
-    count1 = c.rowcount
-    c.execute("UPDATE tahminler SET eski_hedef_fiyat = eski_hedef_fiyat / 2.0, yeni_hedef_fiyat = yeni_hedef_fiyat / 2.0 WHERE hisse_kodu = 'KONTR' AND tarih < '2025-12-09'")
-    count2 = c.rowcount
-    
-    conn.commit()
-    github_upload()
-    conn.close()
-    
-    return f"KONTR düzeltildi: {count1} satır (2024-07-19 oncesi), {count2} satir (2025-12-09 oncesi)"
-
-def init_adjustments_table():
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS bolunme_duzeltmeleri (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            hisse_kodu TEXT NOT NULL,
-            bolunme_tarihi TEXT NOT NULL,
-            oran REAL NOT NULL,
-            aciklama TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    conn.commit()
-    conn.close()
-
-init_adjustments_table()
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5001)
