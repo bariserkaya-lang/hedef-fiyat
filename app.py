@@ -53,13 +53,12 @@ def github_upload():
 def get_adjustment_factor(hisse_kodu, hedef_tarihi):
     """
     Hedef tarihinden SONRA gerçekleşen tüm bölünmelerin çarpanını döndürür.
-    Bölünme öncesi hedefler bu çarpana bölünerek düzeltilir.
     """
     try:
         conn = get_connection()
         c = conn.cursor()
         c.execute("""
-            SELECT bolunme_carpani FROM adjustments
+            SELECT oran FROM bolunme_duzeltmeleri
             WHERE hisse_kodu =? AND bolunme_tarihi >?
             ORDER BY bolunme_tarihi ASC
         """, (hisse_kodu, hedef_tarihi))
@@ -75,7 +74,6 @@ def get_adjustment_factor(hisse_kodu, hedef_tarihi):
 @st.cache_data(ttl=300)
 def get_dashboard_data():
     conn = get_connection()
-    # Tüm tahminleri çek, tarih bilgisiyle beraber
     query = """
     SELECT
         hisse_kodu,
@@ -91,18 +89,14 @@ def get_dashboard_data():
     if df.empty:
         return pd.DataFrame(columns=['Hisse', 'Ortalama Hedef Fiyat', 'Kurum Sayısı'])
 
-    # Her tahmin için bölünme düzeltmesi uygula
     duzeltilmis_fiyatlar = []
     for _, row in df.iterrows():
         carpan = get_adjustment_factor(row['hisse_kodu'], row['tarih'])
         duzeltilmis_fiyatlar.append(row['yeni_hedef_fiyat'] / carpan)
 
     df['duzeltilmis_hedef'] = duzeltilmis_fiyatlar
-
-    # Sadece her kurumun son tahminini al
     son_tahminler = df[df['rn'] == 1]
 
-    # Ortalama al
     result = son_tahminler.groupby('hisse_kodu').agg({
         'duzeltilmis_hedef': 'mean',
         'araci_kurum': 'nunique'
@@ -125,7 +119,6 @@ def get_hisse_detay(hisse_kodu):
     if df.empty:
         return df
 
-    # Bölünme düzeltmesi uygula
     for idx, row in df.iterrows():
         carpan = get_adjustment_factor(hisse_kodu, row['tarih'])
         df.at[idx, 'yeni_hedef_fiyat'] = row['yeni_hedef_fiyat'] / carpan
