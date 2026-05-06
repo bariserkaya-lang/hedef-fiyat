@@ -51,9 +51,6 @@ def github_upload():
 
 @st.cache_data(ttl=300)
 def get_adjustment_factor(hisse_kodu, hedef_tarihi):
-    """
-    Hedef tarihinden SONRA gerçekleşen tüm bölünmelerin çarpanını döndürür.
-    """
     try:
         conn = get_connection()
         c = conn.cursor()
@@ -187,7 +184,6 @@ def sil_tahmin(tahmin_id):
     except Exception as e:
         return False, str(e)
 
-# Session state başlangıcı
 if "dashboard_data" not in st.session_state:
     st.session_state.dashboard_data = get_dashboard_data()
 if "fiyatlar" not in st.session_state:
@@ -196,10 +192,8 @@ if "fiyatlar" not in st.session_state:
 st.title("📈 BIST Hedef Fiyat Portalı")
 tabs = st.tabs(["📊 Dashboard", "🔍 Hisse Analizi", "➕ Yeni Tahmin Ekle", "🗑️ Yönetim"])
 
-# ========================= TAB 1: DASHBOARD =========================
 with tabs[0]:
     st.subheader("Güncel Hedef Fiyat Ortalamaları")
-
     df_view = st.session_state.dashboard_data.copy()
 
     if st.session_state.fiyatlar:
@@ -231,7 +225,6 @@ with tabs[0]:
     if sec:
         st.session_state.selected_stock = sec
 
-# ========================= TAB 2: HİSSE ANALİZİ =========================
 with tabs[1]:
     hisseler = st.session_state.dashboard_data["Hisse"].tolist() if not st.session_state.dashboard_data.empty else []
     if hisseler:
@@ -254,7 +247,6 @@ with tabs[1]:
     else:
         st.info("Henüz tahmin eklenmemiş")
 
-# ========================= TAB 3: YENİ TAHMİN EKLE =========================
 with tabs[2]:
     st.subheader("➕ Yeni Tahmin Ekle")
     with st.form("ekle_form"):
@@ -280,7 +272,6 @@ with tabs[2]:
                 else:
                     st.error(msg)
 
-# ========================= TAB 4: YÖNETİM =========================
 with tabs[3]:
     st.subheader("🗑️ Tahmin Silme")
     hisseler = st.session_state.dashboard_data["Hisse"].tolist() if not st.session_state.dashboard_data.empty else []
