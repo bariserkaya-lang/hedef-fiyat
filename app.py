@@ -49,26 +49,38 @@ def github_upload():
     except:
         return False
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=60)
 def get_adjustment_factor(hisse_kodu, hedef_tarihi):
     try:
         conn = get_connection()
         c = conn.cursor()
+        
+        # Önce tabloda kaç bölünme var görelim
+        c.execute("SELECT COUNT(*) FROM bolunme_duzeltmeleri WHERE hisse_kodu =?", (hisse_kodu,))
+        toplam = c.fetchone()[0]
+        
         c.execute("""
-            SELECT oran FROM bolunme_duzeltmeleri
+            SELECT oran, bolunme_tarihi FROM bolunme_duzeltmeleri
             WHERE hisse_kodu =? AND bolunme_tarihi >?
             ORDER BY bolunme_tarihi ASC
         """, (hisse_kodu, hedef_tarihi))
 
+        rows = c.fetchall()
         toplam_carpan = 1.0
-        for (carpan,) in c.fetchall():
+        for (carpan,) in rows:
             toplam_carpan *= float(carpan)
         conn.close()
+        
+        # Sadece KONTR için debug yaz
+        if hisse_kodu == 'KONTR':
+            st.sidebar.write(f"DEBUG KONTR {hedef_tarihi}: Toplam {toplam} bölünme var, {len(rows)} tanesi bu tarihten sonra. Çarpan: {toplam_carpan}")
+        
         return toplam_carpan
-    except:
+    except Exception as e:
+        st.sidebar.write(f"DEBUG HATA: {e}")
         return 1.0
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=60)
 def get_dashboard_data():
     conn = get_connection()
     query = """
@@ -220,7 +232,7 @@ with tabs[0]:
             st.success("Fiyatlar güncellendi!")
             st.rerun()
 
-    st.dataframe(df_view, use_container_width=True)
+    st.dataframe(df_view, width='stretch')
     sec = st.selectbox("Hisse seç", df_view["Hisse"].tolist() if not df_view.empty else [], key="dashboard_hisse")
     if sec:
         st.session_state.selected_stock = sec
@@ -240,8 +252,8 @@ with tabs[1]:
                 fig.add_trace(go.Scatter(x=graf["Tarih"], y=graf["Dinamik Ortalama"], mode="lines+markers", name="Dinamik Hedef"))
                 fig.add_trace(go.Scatter(x=graf["Tarih"], y=graf["Kapanış"], mode="lines+markers", name="Kapanış"))
                 fig.update_layout(height=500, title=f"{sec_hisse} - Hedef Fiyat vs Kapanış")
-                st.plotly_chart(fig, use_container_width=True)
-                st.dataframe(detay, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
+                st.dataframe(detay, width='stretch')
             else:
                 st.info("Bu hisse için veri bulunamadı")
     else:
@@ -280,7 +292,7 @@ with tabs[3]:
         if sil_hisse:
             detay = get_hisse_detay(sil_hisse)
             if not detay.empty:
-                st.dataframe(detay[["ID","Tarih","Aracı Kurum","Yeni Hedef Fiyat"]])
+                st.dataframe(detay[["ID","Tarih","Aracı Kurum","Yeni Hedef Fiyat"]], width='stretch')
                 sil_id = st.number_input("Silinecek ID", min_value=1, step=1, key="sil_id")
                 if st.button("🗑️ SİL", type="primary"):
                     ok, msg = sil_tahmin(sil_id)
