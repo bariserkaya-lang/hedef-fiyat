@@ -12,31 +12,23 @@ GITHUB_REPO = "bariserkaya-lang/hedef-fiyat"
 GITHUB_PATH = "borsa_verisi.db"
 
 def get_db():
-    return sqlite3.connect(DB_PATH)
-
-def github_upload():
-    if not GITHUB_TOKEN:
-        print("GitHub token yok")
-        return False
-    try:
-        with open(DB_PATH, "rb") as f:
-            content = base64.b64encode(f.read()).decode()
-        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_PATH}"
-        headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
-        r = requests.get(url, headers=headers)
-        sha = r.json().get("sha", "") if r.status_code == 200 else ""
-        data = {"message": f"Admin yedek {datetime.now()}", "content": content, "branch": "main"}
-        if sha:
-            data["sha"] = sha
-        r2 = requests.put(url, headers=headers, json=data)
-        return r2.status_code in [200, 201]
-    except Exception as e:
-        print(f"Yedekleme hatası: {e}")
-        return False
+    conn = sqlite3.connect(DB_PATH)
+    return conn
 
 def init_tables():
     conn = get_db()
     c = conn.cursor()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS tahminler (
+            tarih TEXT,
+            araci_kurum TEXT,
+            hisse_kodu TEXT,
+            eski_hedef_fiyat REAL,
+            yeni_hedef_fiyat REAL,
+            tavsiye TEXT,
+            tarihsel_kapanis REAL
+        )
+    """)
     c.execute("""
         CREATE TABLE IF NOT EXISTS bolunme_duzeltmeleri (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,6 +41,32 @@ def init_tables():
     """)
     conn.commit()
     conn.close()
+    print("Tablolar kontrol edildi/oluşturuldu")
+
+def github_upload():
+    if not GITHUB_TOKEN:
+        print("HATA: GITHUB_TOKEN env variable yok. Render Environment sekmesinden ekleyin")
+        return False
+    try:
+        with open(DB_PATH, "rb") as f:
+            content = base64.b64encode(f.read()).decode()
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_PATH}"
+        headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
+        r = requests.get(url, headers=headers)
+        sha = r.json().get("sha", "") if r.status_code == 200 else ""
+        data = {"message": f"Admin yedek {datetime.now()}", "content": content, "branch": "main"}
+        if sha:
+            data["sha"] = sha
+        r2 = requests.put(url, headers=headers, json=data)
+        if r2.status_code in [200, 201]:
+            print("GitHub'a yedeklendi")
+            return True
+        else:
+            print(f"GitHub hata: {r2.status_code} - {r2.text}")
+            return False
+    except Exception as e:
+        print(f"Yedekleme hatası: {e}")
+        return False
 
 init_tables()
 
@@ -58,8 +76,10 @@ def index():
     c = conn.cursor()
     c.execute("SELECT COUNT(*) FROM tahminler")
     total = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM bolunme_duzeltmeleri")
+    adj_total = c.fetchone()[0]
     conn.close()
-    return render_template('index.html', total=total)
+    return render_template('index.html', total=total, adj_total=adj_total, github_ok=bool(GITHUB_TOKEN))
 
 @app.route('/list')
 def list_predictions():
@@ -89,7 +109,6 @@ def add_prediction():
 
             conn = get_db()
             c = conn.cursor()
-
             c.execute("""
                 SELECT 1 FROM tahminler
                 WHERE tarih =? AND hisse_kodu =? AND araci_kurum =? AND yeni_hedef_fiyat =?
@@ -105,8 +124,10 @@ def add_prediction():
             """, (tarih, kurum, hisse, eski_fiyat, yeni_fiyat, tavsiye, kapanis))
 
             conn.commit()
-            github_upload()
+            upload_ok = github_upload()
             conn.close()
+            if not upload_ok:
+                return render_template('add.html', error="Kayıt eklendi AMA GitHub'a yedeklenemedi. GITHUB_TOKEN kontrol edin!")
             return redirect(url_for('list_predictions'))
         except Exception as e:
             return render_template('add.html', error=str(e))
@@ -143,7 +164,7 @@ def adjustments():
     c.execute("SELECT id, hisse_kodu, bolunme_tarihi, oran, aciklama, created_at FROM bolunme_duzeltmeleri ORDER BY bolunme_tarihi DESC")
     rows = c.fetchall()
     conn.close()
-    return render_template('adjustments.html', adjustments=rows)
+    return render_template('adjustments.html', adjustments=rows, github_ok=bool(GITHUB_TOKEN))
 
 @app.route('/add_adjustment', methods=['GET', 'POST'])
 def add_adjustment():
@@ -159,8 +180,10 @@ def add_adjustment():
             c.execute("INSERT INTO bolunme_duzeltmeleri (hisse_kodu, bolunme_tarihi, oran, aciklama) VALUES (?,?,?,?)",
                       (hisse_kodu, bolunme_tarihi, oran, aciklama))
             conn.commit()
-            github_upload()
+            upload_ok = github_upload()
             conn.close()
+            if not upload_ok:
+                return render_template('add_adjustment.html', error="Bölünme eklendi AMA GitHub'a yedeklenemedi. GITHUB_TOKEN kontrol edin!")
             return redirect(url_for('adjustments'))
         except Exception as e:
             return render_template('add_adjustment.html', error=str(e))
@@ -183,7 +206,6 @@ def kapanis_duzenle():
         hisse = request.form['hisse'].upper()
         conn = get_db()
         c = conn.cursor()
-
         c.execute("SELECT tarih, tarihsel_kapanis FROM tahminler WHERE hisse_kodu =? ORDER BY tarih ASC", (hisse,))
         rows = c.fetchall()
 
